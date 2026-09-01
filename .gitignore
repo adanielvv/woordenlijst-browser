@@ -11,6 +11,3 @@ discovery/
 publication/.estimates/
 publication/dist/
 site/config.js
-docs/config.js
-docs/data/
-docs/pdf/
