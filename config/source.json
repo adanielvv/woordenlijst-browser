@@ -1,0 +1,10 @@
+{
+  "created_at": "2026-09-01T02:11:29+00:00",
+  "base_url": "https://woordenlijst.org/MolexServe/lexicon",
+  "database": "gig_pro_wrdlst",
+  "part_of_speech": "AA|ADV|NUM|INT|CONJ|PD|ADP|VRB|NOU|RES",
+  "onlyvalid": true,
+  "paradigm": true,
+  "diminutive": true,
+  "raw_xml_is_canonical": true
+}

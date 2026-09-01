@@ -1,0 +1,15 @@
+{
+  "name": "woordenlijst-browser",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lokale browser en PDF-export voor het woordenlijst.org XML-archief",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js",
+    "benchmark": "node scripts/benchmark.js"
+  },
+  "dependencies": {
+    "pdfkit": "^0.20.2"
+  }
+}

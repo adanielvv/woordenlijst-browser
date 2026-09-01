@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Doorzoek de gearchiveerde woordenlijst met lemma’s, uitspraak, woordvormen en afbreking.">
+  <meta name="theme-color" content="#164c39">
+  <title>Woordenlijst Browser</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="mark">W</span><div><h1>Woordenlijst Browser</h1><p>Publieke, doorzoekbare archiefeditie</p></div></div>
+    <div class="top-actions"><button class="export-button" id="export-open">↓ PDF-export</button><div class="run-pill is-complete" id="run-pill"><span>Archief compleet</span></div></div>
+  </header>
+  <section class="hero">
+    <div class="hero-copy"><p class="eyebrow">OFFICIËLE SPELLING · ARCHIEFEDITIE</p><h2>Zoek in elke vorm,<br><em>zie elk detail.</em></h2><p>Lemma’s, uitspraak, woordsoort, vervoegingen en afbreking uit het gearchiveerde bronmateriaal.</p></div>
+    <div class="stats" id="stats"><div class="stat"><strong>—</strong><span>Zoekvormen</span></div><div class="stat"><strong>—</strong><span>Lemma’s</span></div><div class="stat"><strong>—</strong><span>Woordvormen</span></div><div class="stat"><strong>—</strong><span>Prefixes</span></div></div>
+    <div class="progress-wrap"><div class="progress-label"><span>Volledige download</span><b id="progress-text">100%</b></div><div class="progress"><i id="progress-bar" style="width:100%"></i></div><small id="progress-detail">Het publicatiearchief is compleet.</small></div>
+  </section>
+  <main class="layout">
+    <aside class="sidebar"><div class="side-title"><span>Voorvoegsels</span><button id="all-prefixes" class="text-button">Alles</button></div><div class="prefixes" id="prefixes"></div></aside>
+    <section class="content">
+      <div class="search-row"><label class="search-box"><span>⌕</span><input id="search" type="search" placeholder="Zoek woord of woordvorm…" autocomplete="off"><kbd>⌘ K</kbd></label><select id="page-size" aria-label="Aantal resultaten"><option value="20">20 per pagina</option><option value="40" selected>40 per pagina</option><option value="100">100 per pagina</option></select></div>
+      <div class="result-head"><div><span id="result-count">0</span> resultaten <b id="active-filter"></b></div><div id="page-label"></div></div>
+      <div class="word-list" id="word-list"><div class="loading">Woorden laden…</div></div>
+      <nav class="pagination" aria-label="Resultaatpagina’s"><button id="prev">← Vorige</button><button id="next">Volgende →</button></nav>
+    </section>
+  </main>
+  <dialog id="detail-dialog"><div class="dialog-shell"><button class="close" id="close-detail" aria-label="Sluiten">×</button><div id="detail-content"></div></div></dialog>
+  <dialog id="export-dialog" class="export-dialog"><div class="dialog-shell"><button class="close" id="close-export" aria-label="Sluiten">×</button><div class="export-head"><p class="eyebrow dark">BOEKEXPORT</p><h2>Welke letters wil je?</h2><p>Kies één of meerdere letters. Iedere gekozen letter wordt als eigen boek-PDF gedownload.</p></div><div class="export-tools"><button id="select-available" class="text-button">Selecteer alle letters</button><button id="clear-letters" class="text-button">Wis selectie</button></div><div class="letter-grid" id="letter-grid"></div><div class="export-summary" id="export-summary">Kies minimaal één letter.</div><button class="generate-pdf" id="generate-pdf" disabled>Download gekozen PDF’s</button></div></dialog>
+  <script src="./config.js"></script>
+  <script src="./app.js" defer></script>
+</body>
+</html>
+
