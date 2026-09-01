@@ -2,7 +2,7 @@
 
 const GATE_CODE = '8086';
 const GATE_KEY = 'woordenlijst_gate_ok';
-const PDF_BUILD = 'lemma-initial-v2';
+const PDF_BUILD = 'combined-cover-v3';
 const config = window.WOORDENLIJST_CONFIG || {};
 const state = { q: '', prefix: '', page: 1, limit: 40, pages: 1 };
 const $ = selector => document.querySelector(selector);
@@ -119,6 +119,81 @@ function buildLetterGrid() {
 function selectedLetters() { return [...document.querySelectorAll('#letter-grid input:checked')].map(input => input.value); }
 function updateExport() { const letters = selectedLetters(); $('#export-summary').textContent = letters.length ? letters.map(letter => letter.toUpperCase()).join(', ') : 'Kies minimaal een letter.'; $('#generate-pdf').disabled = !letters.length; }
 
+function centeredText(page, text, y, font, size, color) {
+  page.drawText(text, { x: (page.getWidth() - font.widthOfTextAtSize(text, size)) / 2, y, font, size, color });
+}
+
+async function buildCombinedPdf(letters) {
+  if (!globalThis.PDFLib) throw new Error('De PDF-module kon niet worden geladen. Ververs de pagina en probeer opnieuw.');
+  const { PDFDocument, StandardFonts, rgb } = globalThis.PDFLib;
+  const combined = await PDFDocument.create();
+  const regular = await combined.embedFont(StandardFonts.Helvetica);
+  const bold = await combined.embedFont(StandardFonts.HelveticaBold);
+  const italic = await combined.embedFont(StandardFonts.HelveticaOblique);
+  const page = combined.addPage([595.28, 841.89]);
+  const green = rgb(0.086, 0.298, 0.224);
+  const dark = rgb(0.09, 0.137, 0.118);
+  const muted = rgb(0.41, 0.45, 0.43);
+  const paper = rgb(0.965, 0.953, 0.91);
+  const letterLabel = letters.map(letter => letter.toUpperCase()).join(' + ');
+
+  page.drawRectangle({ x: 0, y: 0, width: page.getWidth(), height: page.getHeight(), color: paper });
+  page.drawRectangle({ x: 0, y: 665, width: page.getWidth(), height: 177, color: green });
+  centeredText(page, 'WOORDENLIJST NEDERLANDSE TAAL', 775, bold, 12, rgb(1, 1, 1));
+  centeredText(page, 'Samengestelde boekexport', 715, regular, 15, rgb(0.88, 0.93, 0.90));
+  centeredText(page, letterLabel, 487, bold, letters.length > 12 ? 25 : 34, dark);
+  centeredText(page, letters.length === 1 ? '1 letter' : `${letters.length} letters`, 449, italic, 12, muted);
+  page.drawLine({ start: { x: 92, y: 410 }, end: { x: 503, y: 410 }, thickness: 1, color: rgb(0.78, 0.81, 0.78) });
+  centeredText(page, 'Alle lemma-pagina\'s staan per letter achter elkaar.', 370, regular, 11, muted);
+  centeredText(page, 'De afzonderlijke lettervoorbladen zijn weggelaten.', 351, regular, 11, muted);
+  centeredText(page, 'Woordenlijst Browser', 79, bold, 10, green);
+  centeredText(page, new Date().toLocaleDateString('nl-NL'), 60, regular, 9, muted);
+
+  combined.setTitle(`Woordenlijst - ${letterLabel}`);
+  combined.setSubject(`Samengestelde woordenlijst voor ${letterLabel}`);
+  combined.setCreator('Woordenlijst Browser');
+
+  for (let index = 0; index < letters.length; index += 1) {
+    const letter = letters[index];
+    $('#export-summary').textContent = `Letter ${letter.toUpperCase()} laden (${index + 1}/${letters.length})...`;
+    const response = await fetch(new URL(`./pdf/${letter}.pdf?v=${PDF_BUILD}`, document.baseURI));
+    if (!response.ok) throw new Error(`PDF voor letter ${letter.toUpperCase()} kon niet worden geladen (${response.status}).`);
+    const source = await PDFDocument.load(await response.arrayBuffer(), { ignoreEncryption: true });
+    const contentPages = Array.from({ length: Math.max(0, source.getPageCount() - 1) }, (_, pageIndex) => pageIndex + 1);
+    const copiedPages = await combined.copyPages(source, contentPages);
+    copiedPages.forEach(copiedPage => combined.addPage(copiedPage));
+  }
+
+  $('#export-summary').textContent = 'Samengestelde PDF opslaan...';
+  return combined.save({ useObjectStreams: true });
+}
+
+async function downloadCombinedPdf() {
+  const letters = selectedLetters();
+  if (!letters.length) return;
+  const button = $('#generate-pdf');
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = 'PDF samenstellen...';
+  try {
+    const bytes = await buildCombinedPdf(letters);
+    const blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = `woordenlijst-${letters.join('-')}.pdf`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    $('#export-dialog').close();
+  } catch (error) {
+    $('#export-summary').textContent = `Export mislukt: ${error.message}`;
+  } finally {
+    button.textContent = originalLabel;
+    button.disabled = !selectedLetters().length;
+  }
+}
+
 function showApp() {
   $('#gate-screen').hidden = true;
   $('#app-content').hidden = false;
@@ -136,7 +211,7 @@ function showApp() {
   $('#close-export').addEventListener('click', () => $('#export-dialog').close());
   $('#select-available').addEventListener('click', () => { document.querySelectorAll('#letter-grid input:not(:disabled)').forEach(input => { input.checked = true; }); updateExport(); });
   $('#clear-letters').addEventListener('click', () => { document.querySelectorAll('#letter-grid input').forEach(input => { input.checked = false; }); updateExport(); });
-  $('#generate-pdf').addEventListener('click', () => { selectedLetters().forEach((letter, index) => setTimeout(() => { const link = document.createElement('a'); link.href = new URL(`./pdf/${letter}.pdf?v=${PDF_BUILD}`, document.baseURI); link.download = `woordenlijst-${letter}.pdf`; link.click(); }, index * 250)); $('#export-dialog').close(); });
+  $('#generate-pdf').addEventListener('click', downloadCombinedPdf);
   document.addEventListener('keydown', event => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); $('#search').focus(); } });
 
   Promise.all([loadMetadata(), loadWords()]).catch(error => { $('#word-list').innerHTML = `<div class="empty">${esc(error.message)}</div>`; });
