@@ -31,11 +31,13 @@ build_group() {
   local letters=$1 port=$2
   for letter in ${(s::)letters}; do
     target="$output_dir/$letter.pdf"
-    if [[ -s "$target" ]]; then
+    if [[ -s "$target" && "${FORCE:-0}" != "1" ]]; then
       echo "skip $letter"
       continue
     fi
-    curl -fsS "http://127.0.0.1:$port/api/export.pdf?letters=$letter" -o "$target"
+    temp="$target.part"
+    curl -fsS "http://127.0.0.1:$port/api/export.pdf?letters=$letter" -o "$temp"
+    mv "$temp" "$target"
     echo "pdf $letter $(stat -f %z "$target") bytes"
   done
 }
@@ -48,4 +50,3 @@ done
 for pid in $group_pids; do wait "$pid"; done
 
 echo "PDF build complete: $(find "$output_dir" -name '*.pdf' | wc -l | tr -d ' ') files"
-

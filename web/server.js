@@ -25,6 +25,17 @@ const state = new DatabaseSync(STATE_DB, { readOnly: true });
 content.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=60000; PRAGMA cache_size=-65536;');
 state.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=60000; PRAGMA cache_size=-16384;');
 
+function initialLetter(value) {
+  const normalized = String(value || '')
+    .trimStart()
+    .normalize('NFD')
+    .replace(/\p{M}+/gu, '')
+    .toLocaleLowerCase('nl-NL');
+  return [...normalized].find(character => /^[a-z]$/.test(character)) || '';
+}
+
+content.function('initial_letter', { deterministic: true, directOnly: true }, initialLetter);
+
 const metadataCache = new Map();
 const countCache = new Map();
 
@@ -232,17 +243,18 @@ function pdfSafe(value) {
 
 function generatePdf(res, letters) {
   const placeholders = letters.map(() => '?').join(',');
+  const exportLetter = "initial_letter(COALESCE(NULLIF(l.lemma, ''), r.query_word))";
   const rows = content.prepare(`
     WITH ranked AS (
       SELECT l.*, r.prefix_bucket, r.query_word,
-        substr(r.prefix_bucket, 1, 1) AS export_letter,
+        ${exportLetter} AS export_letter,
         ROW_NUMBER() OVER (
           PARTITION BY CASE WHEN l.lemma_id<>'' THEN 'id:'||l.lemma_id
                             ELSE 'text:'||lower(l.lemma)||'|'||l.label END
           ORDER BY r.id, l.id
         ) AS rn
       FROM lemmata l JOIN responses r ON r.id=l.response_id
-      WHERE substr(r.prefix_bucket, 1, 1) IN (${placeholders})
+      WHERE ${exportLetter} IN (${placeholders})
     )
     SELECT * FROM ranked WHERE rn=1
     ORDER BY export_letter, lemma COLLATE NOCASE, lemma, id
@@ -252,9 +264,20 @@ function generatePdf(res, letters) {
     FROM paradigms WHERE lemma_row_id=?
     ORDER BY CAST(position AS INTEGER), id
   `);
-  const counts = Object.fromEntries(
-    getLetters().filter(row => letters.includes(row.letter)).map(row => [row.letter, row.lemmata])
-  );
+  const counts = Object.fromEntries(content.prepare(`
+    WITH ranked AS (
+      SELECT ${exportLetter} AS export_letter,
+        ROW_NUMBER() OVER (
+          PARTITION BY CASE WHEN l.lemma_id<>'' THEN 'id:'||l.lemma_id
+                            ELSE 'text:'||lower(l.lemma)||'|'||l.label END
+          ORDER BY r.id, l.id
+        ) AS rn
+      FROM lemmata l JOIN responses r ON r.id=l.response_id
+      WHERE ${exportLetter} IN (${placeholders})
+    )
+    SELECT export_letter, COUNT(*) AS lemmata
+    FROM ranked WHERE rn=1 GROUP BY export_letter
+  `).all(...letters).map(row => [row.export_letter, row.lemmata]));
   const filename = `woordenlijst-${letters.join('-')}.pdf`;
   res.writeHead(200, commonHeaders({
     'Content-Type': 'application/pdf',

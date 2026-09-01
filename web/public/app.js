@@ -2,6 +2,7 @@
 
 const GATE_CODE = '8086';
 const GATE_KEY = 'woordenlijst_gate_ok';
+const PDF_BUILD = 'lemma-initial-v2';
 const config = window.WOORDENLIJST_CONFIG || {};
 const state = { q: '', prefix: '', page: 1, limit: 40, pages: 1 };
 const $ = selector => document.querySelector(selector);
@@ -135,7 +136,7 @@ function showApp() {
   $('#close-export').addEventListener('click', () => $('#export-dialog').close());
   $('#select-available').addEventListener('click', () => { document.querySelectorAll('#letter-grid input:not(:disabled)').forEach(input => { input.checked = true; }); updateExport(); });
   $('#clear-letters').addEventListener('click', () => { document.querySelectorAll('#letter-grid input').forEach(input => { input.checked = false; }); updateExport(); });
-  $('#generate-pdf').addEventListener('click', () => { selectedLetters().forEach((letter, index) => setTimeout(() => { const link = document.createElement('a'); link.href = new URL(`./pdf/${letter}.pdf`, document.baseURI); link.download = `woordenlijst-${letter}.pdf`; link.click(); }, index * 250)); $('#export-dialog').close(); });
+  $('#generate-pdf').addEventListener('click', () => { selectedLetters().forEach((letter, index) => setTimeout(() => { const link = document.createElement('a'); link.href = new URL(`./pdf/${letter}.pdf?v=${PDF_BUILD}`, document.baseURI); link.download = `woordenlijst-${letter}.pdf`; link.click(); }, index * 250)); $('#export-dialog').close(); });
   document.addEventListener('keydown', event => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); $('#search').focus(); } });
 
   Promise.all([loadMetadata(), loadWords()]).catch(error => { $('#word-list').innerHTML = `<div class="empty">${esc(error.message)}</div>`; });
