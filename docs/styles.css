@@ -3,6 +3,9 @@
   --green: #1f6b4f; --green-dark: #164c39; --lime: #cce36f; --line: #d9ded8;
   --serif: Georgia, 'Times New Roman', serif; --sans: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
+
+/* Author CSS must never override the semantic hidden attribute. */
+[hidden] { display: none !important; }
 * { box-sizing: border-box; }
 html { color-scheme: light; }
 body { margin: 0; color: var(--ink); background: var(--paper); font-family: var(--sans); }
