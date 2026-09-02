@@ -2,8 +2,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const prefixes = require(path.join(__dirname, '..', '..', 'docs', 'data', 'prefixes.json'));
+const appSource = fs.readFileSync(path.join(__dirname, '..', '..', 'docs', 'app.js'), 'utf8');
 
 test('prefixmetadata bevat letters, cijfers en alle speciale tekens', () => {
   const names = new Set(prefixes.map(row => row.prefix));
@@ -22,4 +24,8 @@ test('alle 601 prefixbuckets passen in de drie navigatieniveaus', () => {
   ));
   assert.equal(prefixes.length, 601);
   assert.equal(classified.length, prefixes.length);
+});
+
+test('de UI koppelt zichtbare hoofdgroepen via hun groepssleutel', () => {
+  assert.match(appSource, /rowsByGroup\.has\(group\.key\)/);
 });

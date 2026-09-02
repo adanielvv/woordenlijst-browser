@@ -78,7 +78,7 @@ function prefixGroups() {
   });
   const groups = ALPHABET.split('').map(letter => ({ key: `letter-${letter}`, label: letter.toUpperCase() }));
   groups.push({ key: 'numbers', label: '0–9', wide: true }, { key: 'symbols', label: 'Tekens', wide: true });
-  return groups.filter(group => rowsByGroup.has(group)).map(group => ({
+  return groups.filter(group => rowsByGroup.has(group.key)).map(group => ({
     ...group,
     rows: rowsByGroup.get(group),
     total: rowsByGroup.get(group).reduce((sum, row) => sum + row.total, 0),
