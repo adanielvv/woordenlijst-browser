@@ -15,6 +15,7 @@ import downloader
 
 ROOT = Path(__file__).resolve().parent
 SOURCE = ROOT / "config" / "a-z_woordenboek.org.txt"
+SUPPLEMENT = ROOT / "config" / "special-initials-woordenlijst.org.txt"
 SPLIT_PREFIXES = {
     "a": ["ap", "ar", "as", "au"],
     "b": ["bi", "bl", "bo", "br", "bu"],
@@ -51,6 +52,8 @@ def main() -> int:
 
     if not args.skip_import:
         downloader.import_word_list(SOURCE)
+        if SUPPLEMENT.exists():
+            downloader.append_word_list(SUPPLEMENT)
     started: list[tuple[str, int]] = []
     skipped: list[str] = []
     for letter in letters:

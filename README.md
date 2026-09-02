@@ -32,6 +32,18 @@ python3 run_archive.py --start-letter a --end-letter z --batch-size 1000 --delay
 1.000 woorden staat een checkpoint in SQLite. Voortgang staat in
 `state/full-run.json` en `logs/full-run.log`.
 
+Begintekens buiten A-Z worden afzonderlijk geïnventariseerd en bewaard. De
+actuele aanvullende bron bevat apostrof, 0-9, `µ` en `Ω`:
+
+```bash
+python3 downloader.py append-list config/special-initials-woordenlijst.org.txt
+python3 start_special_initials.py --workers 4 --delay 0.075
+```
+
+Deze vormen komen terecht in `raw/_numeric/digit-*` en
+`raw/_symbols/symbol-*`. Unicodeletters met diakritische tekens blijven bij de
+bijbehorende A-Z-prefix via Unicode-normalisatie.
+
 - `discovery/a/aa.xml`: oorspronkelijke suggestierespons voor `aa%`
 - `discovery/a/aa.txt`: ontdekte zoekwoorden
 - `raw/a/aa/*.xml`: één XML-bestand per zoekwoord

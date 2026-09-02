@@ -26,6 +26,11 @@ CONTENT_DB = ROOT / "database" / "woordenlijst.sqlite"
 BASE_URL = "https://woordenlijst.org/MolexServe/lexicon"
 POS = "AA|ADV|NUM|INT|CONJ|PD|ADP|VRB|NOU|RES"
 USER_AGENT = "GroeneBoekjeArchive/1.0 (personal archival research; sequential requests)"
+SPECIAL_INITIAL_BUCKETS = {
+    "'": "symbol-apostrophe",
+    "µ": "symbol-micro",
+    "Ω": "symbol-omega",
+}
 
 
 def now() -> str:
@@ -47,10 +52,16 @@ def ascii_fold(value: str) -> str:
 
 
 def bucket_for(word: str) -> tuple[str, str]:
+    initial = word[:1]
+    if initial.isascii() and initial.isdigit():
+        return "_numeric", f"digit-{initial}"
+    if initial in SPECIAL_INITIAL_BUCKETS:
+        return "_symbols", SPECIAL_INITIAL_BUCKETS[initial]
     folded = ascii_fold(word)
     first = folded[:1] if folded[:1].isalpha() and folded[:1].isascii() else "_other"
     if first == "_other":
-        return first, first
+        codepoint = f"u{ord(initial):04x}" if initial else "empty"
+        return "_symbols", f"symbol-{codepoint}"
     second = folded[1:2]
     if second.isalpha() and second.isascii():
         return first, first + second
@@ -268,6 +279,37 @@ def import_word_list(path: Path) -> tuple[int, int]:
     return len(words), inserted
 
 
+def append_word_list(path: Path) -> tuple[int, int]:
+    """Append a supplemental source without deactivating the primary source."""
+    init_databases()
+    path = path.expanduser().resolve()
+    data = path.read_bytes()
+    words = parse_word_list(path)
+    source_name = f"file:{path.name}"
+    with state_conn() as db:
+        before = db.execute("SELECT COUNT(*) FROM candidates").fetchone()[0]
+        for word in words:
+            first, bucket = bucket_for(word)
+            db.execute(
+                """INSERT INTO candidates
+                   (word, first_bucket, prefix_bucket, discovered_from, active_source)
+                   VALUES (?, ?, ?, ?, 1)
+                   ON CONFLICT(word) DO UPDATE SET active_source=1""",
+                (word, first, bucket, source_name),
+            )
+        after = db.execute("SELECT COUNT(*) FROM candidates").fetchone()[0]
+        inserted = after - before
+        db.execute(
+            """INSERT INTO source_imports
+               (source_path, source_sha256, source_bytes, word_count,
+                inserted_count, imported_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (str(path), sha256(data), len(data), len(words), inserted, now()),
+        )
+    print(f"APPENDED {len(words)} woorden; {inserted} nieuw toegevoegd uit {path}")
+    return len(words), inserted
+
+
 def discover(prefix: str, retries: int = 5) -> int:
     init_databases()
     prefix = ascii_fold(prefix.strip()).lower()
@@ -317,6 +359,62 @@ def discover(prefix: str, retries: int = 5) -> int:
                 (word, first, bucket, prefix),
             )
     print(f"DISCOVERED {prefix}: {len(words)} woorden -> {txt_path}")
+    return len(words)
+
+
+def discover_initial(initial: str, retries: int = 5) -> int:
+    """Archive and enqueue all suggestions beginning with one exact character."""
+    init_databases()
+    if len(initial) != 1:
+        raise SystemExit("initial moet exact één teken bevatten")
+    params = {"database": "gig_pro_wrdlst", "wordform": initial + "%",
+              "part_of_speech": "", "onlyvalid": "true"}
+    last_error = ""
+    for attempt in range(1, retries + 1):
+        code, data, error = curl_get("get_suggestions", params)
+        if code == 200:
+            try:
+                returned = parse_suggestions(data)
+                words = [word for word in returned if word.startswith(initial)]
+                break
+            except (ET.ParseError, ValueError) as exc:
+                last_error = str(exc)
+        else:
+            last_error = error or f"HTTP {code}"
+        if attempt < retries:
+            time.sleep(min(30, 2 ** attempt) + random.random())
+    else:
+        raise SystemExit(f"discovery mislukt voor {initial!r}: {last_error}")
+
+    first, bucket = bucket_for(initial)
+    key = f"initial-u{ord(initial):04x}"
+    xml_path = ROOT / "discovery" / first / f"{key}.xml"
+    txt_path = ROOT / "discovery" / first / f"{key}.txt"
+    atomic_write(xml_path, data)
+    atomic_write(txt_path, ("\n".join(words) + "\n").encode("utf-8"))
+    with state_conn() as db:
+        db.execute(
+            """INSERT INTO discoveries
+               (prefix, pattern, xml_path, txt_path, sha256, bytes, word_count, status, downloaded_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'complete', ?)
+               ON CONFLICT(prefix) DO UPDATE SET pattern=excluded.pattern,
+                 xml_path=excluded.xml_path, txt_path=excluded.txt_path,
+                 sha256=excluded.sha256, bytes=excluded.bytes,
+                 word_count=excluded.word_count, status='complete',
+                 downloaded_at=excluded.downloaded_at""",
+            (key, initial + "%", str(xml_path.relative_to(ROOT)), str(txt_path.relative_to(ROOT)),
+             sha256(data), len(data), len(words), now()),
+        )
+        for word in words:
+            word_first, word_bucket = bucket_for(word)
+            db.execute(
+                """INSERT INTO candidates
+                   (word, first_bucket, prefix_bucket, discovered_from, active_source)
+                   VALUES (?, ?, ?, ?, 1)
+                   ON CONFLICT(word) DO UPDATE SET active_source=1""",
+                (word, word_first, word_bucket, key),
+            )
+    print(f"DISCOVERED {initial!r}: {len(words)} woorden -> {txt_path}")
     return len(words)
 
 
@@ -406,7 +504,12 @@ def normalize_response(word: str, prefix_bucket: str, path: Path, code: int, dat
 
 
 def append_manifest(bucket: str, record: dict) -> None:
-    first = bucket[:1] if bucket != "_other" else "_other"
+    if bucket.startswith("digit-"):
+        first = "_numeric"
+    elif bucket.startswith("symbol-"):
+        first = "_symbols"
+    else:
+        first = bucket[:1]
     path = ROOT / "manifests" / first / f"{bucket}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
@@ -515,7 +618,13 @@ def validate(prefix: str) -> int:
                    "failed_count": sum(row["status"] == "failed" for row in candidates),
                    "problem_count": len(problems), "problems": problems,
                    "validated_at": now()}
-    report = ROOT / "manifests" / prefix[:1] / f"{prefix}.validation.json"
+    if prefix.startswith("digit-"):
+        report_group = "_numeric"
+    elif prefix.startswith("symbol-"):
+        report_group = "_symbols"
+    else:
+        report_group = prefix[:1]
+    report = ROOT / "manifests" / report_group / f"{prefix}.validation.json"
     atomic_write(report, (json.dumps(summary, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0 if not problems else 1
@@ -537,14 +646,18 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init")
     p = sub.add_parser("import-list"); p.add_argument("--file", required=True, type=Path)
+    p = sub.add_parser("append-list"); p.add_argument("--file", required=True, type=Path)
     p = sub.add_parser("discover"); p.add_argument("--prefix", required=True)
+    p = sub.add_parser("discover-initial"); p.add_argument("--initial", required=True)
     p = sub.add_parser("fetch"); p.add_argument("--prefix", required=True); p.add_argument("--limit", type=int); p.add_argument("--delay", type=float, default=1.25); p.add_argument("--retries", type=int, default=5)
     p = sub.add_parser("validate"); p.add_argument("--prefix", required=True)
     p = sub.add_parser("status"); p.add_argument("--prefix")
     args = parser.parse_args()
     if args.command == "init": init_databases(); print(f"INITIALIZED {ROOT}")
     elif args.command == "import-list": import_word_list(args.file)
+    elif args.command == "append-list": append_word_list(args.file)
     elif args.command == "discover": discover(args.prefix)
+    elif args.command == "discover-initial": discover_initial(args.initial)
     elif args.command == "fetch": fetch(args.prefix, args.limit, args.delay, args.retries)
     elif args.command == "validate": return validate(args.prefix)
     elif args.command == "status": status(args.prefix)

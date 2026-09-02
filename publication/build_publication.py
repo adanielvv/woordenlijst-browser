@@ -97,15 +97,15 @@ def build_metadata(db: sqlite3.Connection, prefix_counts: dict[str, int]) -> Non
 
 def copy_site() -> None:
     shutil.copytree(ROOT / "web" / "public", DIST, dirs_exist_ok=True)
+    (DIST / "config.example.js").unlink(missing_ok=True)
     site = ROOT / "site"
-    for source in site.iterdir():
-        if source.name.startswith("."):
-            continue
-        target = DIST / source.name
-        if source.is_dir():
-            shutil.copytree(source, target, dirs_exist_ok=True)
-        else:
-            shutil.copy2(source, target)
+    # Only deployment-specific files may override the canonical frontend.
+    # Copying the whole legacy site directory here used to replace the current
+    # access gate and combined-PDF implementation with stale app.js/index.html.
+    for name in ("config.js", ".nojekyll"):
+        source = site / name
+        if source.exists():
+            shutil.copy2(source, DIST / name)
 
 
 def main() -> None:
