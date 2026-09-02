@@ -3,6 +3,8 @@
 const GATE_CODE = '8086';
 const GATE_KEY = 'woordenlijst_gate_ok';
 const PDF_BUILD = 'combined-cover-v3';
+const INTEGRAL_PDF_BUILD = 'integral-a-z-v1';
+const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
 const config = window.WOORDENLIJST_CONFIG || {};
 const state = { q: '', prefix: '', page: 1, limit: 40, pages: 1 };
 const $ = selector => document.querySelector(selector);
@@ -171,6 +173,16 @@ async function buildCombinedPdf(letters) {
 async function downloadCombinedPdf() {
   const letters = selectedLetters();
   if (!letters.length) return;
+  if (letters.join('') === ALPHABET) {
+    const link = document.createElement('a');
+    link.href = new URL(`./pdf/woordenlijst-a-z-compact.pdf?v=${INTEGRAL_PDF_BUILD}`, document.baseURI);
+    link.download = 'woordenlijst-a-z-compact.pdf';
+    document.body.append(link);
+    link.click();
+    link.remove();
+    $('#export-dialog').close();
+    return;
+  }
   const button = $('#generate-pdf');
   const originalLabel = button.textContent;
   button.disabled = true;

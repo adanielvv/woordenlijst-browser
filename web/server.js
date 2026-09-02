@@ -65,6 +65,7 @@ const mime = {
   '.js': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.json': 'application/json; charset=utf-8',
+  '.pdf': 'application/pdf',
 };
 
 function json(res, value, status = 200, cacheControl = 'no-store') {
@@ -383,8 +384,9 @@ function generatePdf(res, letters) {
 
 function serveStatic(reqPath, res) {
   const relative = reqPath === '/' ? 'index.html' : reqPath.replace(/^\/+/, '');
-  const resolved = path.resolve(PUBLIC, relative);
-  if (!resolved.startsWith(PUBLIC + path.sep) && resolved !== path.join(PUBLIC, 'index.html')) {
+  const staticRoot = relative.startsWith('pdf/') ? path.join(ROOT, 'docs') : PUBLIC;
+  const resolved = path.resolve(staticRoot, relative);
+  if (!resolved.startsWith(staticRoot + path.sep) && resolved !== path.join(staticRoot, 'index.html')) {
     res.writeHead(403, commonHeaders()); res.end('Forbidden'); return;
   }
   try {

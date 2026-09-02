@@ -40,6 +40,9 @@ dialog { width:min(920px,94vw); max-height:92vh; border:0; padding:0; border-rad
 .export-head>p:last-child { color:var(--muted); font-size:13px; line-height:1.5; }
 .eyebrow.dark { color:var(--green); margin:0; }
 .export-tools { display:flex; justify-content:space-between; margin:22px 0 12px; }
+.integral-download { display:flex; justify-content:space-between; align-items:center; gap:18px; margin:20px 0 8px; padding:14px 16px; border:1px solid #a9c5b8; border-radius:10px; background:#edf4f0; color:var(--green-dark); text-decoration:none; }
+.integral-download:hover { background:#e3efe9; border-color:var(--green); }
+.integral-download small { color:#65736c; text-align:right; font-weight:500; }
 .letter-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
 .letter-choice { position:relative; }
 .letter-choice input { position:absolute; opacity:0; }
