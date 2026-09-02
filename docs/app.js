@@ -80,8 +80,8 @@ function prefixGroups() {
   groups.push({ key: 'numbers', label: '0–9', wide: true }, { key: 'symbols', label: 'Tekens', wide: true });
   return groups.filter(group => rowsByGroup.has(group.key)).map(group => ({
     ...group,
-    rows: rowsByGroup.get(group),
-    total: rowsByGroup.get(group).reduce((sum, row) => sum + row.total, 0),
+    rows: rowsByGroup.get(group.key),
+    total: rowsByGroup.get(group.key).reduce((sum, row) => sum + row.total, 0),
   }));
 }
 

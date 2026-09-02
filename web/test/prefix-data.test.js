@@ -28,4 +28,5 @@ test('alle 601 prefixbuckets passen in de drie navigatieniveaus', () => {
 
 test('de UI koppelt zichtbare hoofdgroepen via hun groepssleutel', () => {
   assert.match(appSource, /rowsByGroup\.has\(group\.key\)/);
+  assert.equal((appSource.match(/rowsByGroup\.get\(group\.key\)/g) || []).length, 2);
 });
