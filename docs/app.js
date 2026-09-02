@@ -6,7 +6,7 @@ const PDF_BUILD = 'combined-cover-v3';
 const INTEGRAL_PDF_BUILD = 'integral-a-z-v1';
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
 const config = window.WOORDENLIJST_CONFIG || {};
-const state = { q: '', prefix: '', page: 1, limit: 40, pages: 1 };
+const state = { q: '', prefix: '', prefixGroup: '', page: 1, limit: 40, pages: 1 };
 const $ = selector => document.querySelector(selector);
 const fmt = value => new Intl.NumberFormat('nl-NL').format(value || 0);
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -44,10 +44,67 @@ async function loadMetadata() {
   renderPrefixes();
 }
 
+const SPECIAL_PREFIXES = Object.freeze({
+  'symbol-apostrophe': { label: "'", name: 'apostrof' },
+  'symbol-micro': { label: 'µ', name: 'microteken' },
+  'symbol-omega': { label: 'Ω', name: 'omega' },
+});
+
+function prefixGroup(prefix) {
+  if (/^[a-z](?:[a-z]|_)$/.test(prefix)) return `letter-${prefix[0]}`;
+  if (/^digit-[0-9]$/.test(prefix)) return 'numbers';
+  if (SPECIAL_PREFIXES[prefix]) return 'symbols';
+  return 'other';
+}
+
+function prefixLabel(prefix) {
+  if (/^[a-z]_$/.test(prefix)) return `${prefix[0]}…`;
+  if (/^digit-[0-9]$/.test(prefix)) return prefix.at(-1);
+  return SPECIAL_PREFIXES[prefix]?.label || prefix;
+}
+
+function prefixName(prefix) {
+  if (/^[a-z]_$/.test(prefix)) return `${prefix[0].toUpperCase()} en varianten`;
+  if (/^digit-[0-9]$/.test(prefix)) return `cijfer ${prefix.at(-1)}`;
+  return SPECIAL_PREFIXES[prefix]?.name || prefix;
+}
+
+function prefixGroups() {
+  const rowsByGroup = new Map();
+  metadata.prefixes.forEach(row => {
+    const group = prefixGroup(row.prefix);
+    if (!rowsByGroup.has(group)) rowsByGroup.set(group, []);
+    rowsByGroup.get(group).push(row);
+  });
+  const groups = ALPHABET.split('').map(letter => ({ key: `letter-${letter}`, label: letter.toUpperCase() }));
+  groups.push({ key: 'numbers', label: '0–9', wide: true }, { key: 'symbols', label: 'Tekens', wide: true });
+  return groups.filter(group => rowsByGroup.has(group)).map(group => ({
+    ...group,
+    rows: rowsByGroup.get(group),
+    total: rowsByGroup.get(group).reduce((sum, row) => sum + row.total, 0),
+  }));
+}
+
 function renderPrefixes() {
-  $('#prefixes').innerHTML = metadata.prefixes.map(row => `<button class="prefix ${state.prefix === row.prefix ? 'active' : ''}" data-prefix="${esc(row.prefix)}">${esc(row.prefix)}<small>${fmt(row.total)}</small></button>`).join('');
+  const groups = prefixGroups();
+  const expanded = groups.find(group => group.key === state.prefixGroup);
+  const groupButtons = groups.map(group => {
+    const active = group.rows.some(row => row.prefix === state.prefix);
+    const open = group.key === state.prefixGroup;
+    return `<button class="prefix-group${active ? ' active' : ''}${group.wide ? ' wide' : ''}" data-group="${group.key}" aria-expanded="${open}" aria-controls="prefix-children"><span>${esc(group.label)}</span><small>${fmt(group.total)}</small></button>`;
+  }).join('');
+  const children = expanded ? `<section class="prefix-panel" aria-label="${esc(expanded.label)}-voorvoegsels"><div class="prefix-panel-head"><b>${esc(expanded.label)}-voorvoegsels</b><span>${fmt(expanded.total)} vormen</span></div><div class="prefix-children" id="prefix-children">${expanded.rows.map(row => `<button class="prefix ${state.prefix === row.prefix ? 'active' : ''}" data-prefix="${esc(row.prefix)}" title="${esc(prefixName(row.prefix))}" aria-pressed="${state.prefix === row.prefix}">${esc(prefixLabel(row.prefix))}<small>${fmt(row.total)}</small></button>`).join('')}</div></section>` : '';
+  $('#prefixes').innerHTML = `<div class="prefix-groups">${groupButtons}</div>${children}`;
+  document.querySelectorAll('.prefix-group').forEach(button => button.addEventListener('click', () => {
+    state.prefixGroup = state.prefixGroup === button.dataset.group ? '' : button.dataset.group;
+    renderPrefixes();
+  }));
   document.querySelectorAll('.prefix').forEach(button => button.addEventListener('click', () => {
-    state.prefix = button.dataset.prefix; state.page = 1; renderPrefixes(); loadWords();
+    state.prefix = button.dataset.prefix;
+    state.prefixGroup = prefixGroup(state.prefix);
+    state.page = 1;
+    renderPrefixes();
+    loadWords();
   }));
 }
 
@@ -67,7 +124,7 @@ async function loadWords() {
     const data = await supabase(`entries?${params}`, { signal: wordsController.signal });
     state.pages = Math.max(1, Math.ceil(data.total / state.limit));
     $('#result-count').textContent = fmt(data.total);
-    $('#active-filter').textContent = state.prefix ? ` - prefix ${state.prefix}` : '';
+    $('#active-filter').textContent = state.prefix ? ` - ${prefixName(state.prefix)}` : '';
     $('#page-label').textContent = `Pagina ${state.page} van ${state.pages}`;
     $('#prev').disabled = state.page <= 1; $('#next').disabled = state.page >= state.pages;
     $('#word-list').innerHTML = data.rows.length ? data.rows.map(row => `<article class="word-row" data-id="${row.id}" data-prefix="${esc(row.prefix)}" tabindex="0" role="button" aria-label="Open ${esc(row.word)}"><div><div class="word">${esc(row.word)}</div>${row.pronunciation ? `<div class="pron">/${esc(row.pronunciation)}/</div>` : ''}</div><div><div class="kind">${esc(row.label)}</div>${row.gloss ? `<div class="gloss">${esc(row.gloss)}</div>` : ''}</div><span class="badge">${fmt(row.lemma_count)} analyses</span><span class="arrow">&rsaquo;</span></article>`).join('') : '<div class="empty">Geen woorden gevonden.</div>';
@@ -216,7 +273,7 @@ function showApp() {
   $('#page-size').addEventListener('change', event => { state.limit = Number(event.target.value); state.page = 1; loadWords(); });
   $('#prev').addEventListener('click', () => { if (state.page > 1) { state.page -= 1; loadWords(); } });
   $('#next').addEventListener('click', () => { if (state.page < state.pages) { state.page += 1; loadWords(); } });
-  $('#all-prefixes').addEventListener('click', () => { state.prefix = ''; state.page = 1; renderPrefixes(); loadWords(); });
+  $('#all-prefixes').addEventListener('click', () => { state.prefix = ''; state.prefixGroup = ''; state.page = 1; renderPrefixes(); loadWords(); });
   $('#close-detail').addEventListener('click', () => $('#detail-dialog').close());
   $('#detail-dialog').addEventListener('click', event => { if (event.target === $('#detail-dialog')) $('#detail-dialog').close(); });
   $('#export-open').addEventListener('click', () => { buildLetterGrid(); updateExport(); $('#export-dialog').showModal(); });

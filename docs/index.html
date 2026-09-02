@@ -6,7 +6,7 @@
   <meta name="description" content="Doorzoek de gearchiveerde woordenlijst met lemma's, uitspraak, woordvormen en afbreking.">
   <meta name="theme-color" content="#164c39">
   <title>Woordenlijst Browser</title>
-  <link rel="stylesheet" href="./styles.css?v=integral-v1">
+  <link rel="stylesheet" href="./styles.css?v=prefix-hierarchy-v1">
 </head>
 <body>
 
@@ -34,7 +34,7 @@
       <div class="progress-wrap"><div class="progress-label"><span>Volledige download</span><b id="progress-text">100%</b></div><div class="progress"><i id="progress-bar" style="width:100%"></i></div><small id="progress-detail">Het publicatiearchief is compleet.</small></div>
     </section>
     <main class="layout">
-      <aside class="sidebar"><div class="side-title"><span>Voorvoegsels</span><button id="all-prefixes" class="text-button">Alles</button></div><div class="prefixes" id="prefixes"></div></aside>
+      <aside class="sidebar"><div class="side-title"><span>Voorvoegsels</span><button id="all-prefixes" class="text-button">Alles</button></div><nav class="prefixes" id="prefixes" aria-label="Blader op voorvoegsel"></nav></aside>
       <section class="content">
         <div class="search-row"><label class="search-box"><span>&#8984;</span><input id="search" type="search" placeholder="Zoek woord of woordvorm..." autocomplete="off"><kbd>&#8984; K</kbd></label><select id="page-size" aria-label="Aantal resultaten"><option value="20">20 per pagina</option><option value="40" selected>40 per pagina</option><option value="100">100 per pagina</option></select></div>
         <div class="result-head"><div><span id="result-count">0</span> resultaten <b id="active-filter"></b></div><div id="page-label"></div></div>
@@ -48,6 +48,6 @@
 
   <script src="./config.js"></script>
   <script src="./vendor/pdf-lib.min.js?v=1.17.1"></script>
-  <script src="./app.js?v=integral-v1" defer></script>
+  <script src="./app.js?v=prefix-hierarchy-v1" defer></script>
 </body>
 </html>
