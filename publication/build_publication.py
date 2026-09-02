@@ -8,6 +8,7 @@ import gzip
 import json
 import shutil
 import sqlite3
+import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
@@ -77,14 +78,23 @@ def build_details(db: sqlite3.Connection) -> dict[str, int]:
 def build_metadata(db: sqlite3.Connection, prefix_counts: dict[str, int]) -> None:
     letter_counts: dict[str, int] = defaultdict(int)
     for prefix, count in prefix_counts.items():
-        if prefix and prefix[0].lower() in "abcdefghijklmnopqrstuvwxyz":
+        if len(prefix) == 2 and prefix[0].lower() in "abcdefghijklmnopqrstuvwxyz" and (prefix[1].lower() in "abcdefghijklmnopqrstuvwxyz_"):
             letter_counts[prefix[0].lower()] += count
+    for row in db.execute("SELECT query_word FROM responses WHERE prefix_bucket='symbol-apostrophe'"):
+        normalized = "".join(character for character in unicodedata.normalize("NFD", row[0]) if not unicodedata.combining(character)).lower()
+        letter = next((character for character in normalized.lstrip("'‘’ʼ ") if character in "abcdefghijklmnopqrstuvwxyz"), "")
+        if letter:
+            letter_counts[letter] += 1
     stats = {
         "responses": scalar(db, "SELECT COUNT(*) FROM responses"),
         "lemmata": scalar(db, "SELECT COUNT(*) FROM lemmata"),
         "paradigms": scalar(db, "SELECT COUNT(*) FROM paradigms"),
         "prefixes": len(prefix_counts),
         "letters": dict(sorted(letter_counts.items())),
+        "pdf_sections": {
+            "0-9": sum(count for prefix, count in prefix_counts.items() if prefix.startswith("digit-")),
+            "other": sum(prefix_counts.get(prefix, 0) for prefix in ("symbol-micro", "symbol-omega")),
+        },
     }
     data_dir = DIST / "data"
     data_dir.mkdir(parents=True, exist_ok=True)

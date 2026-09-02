@@ -6,7 +6,7 @@
   <meta name="description" content="Doorzoek de gearchiveerde woordenlijst met lemma's, uitspraak, woordvormen en afbreking.">
   <meta name="theme-color" content="#164c39">
   <title>Woordenlijst Browser</title>
-  <link rel="stylesheet" href="./styles.css?v=prefix-hierarchy-v1">
+  <link rel="stylesheet" href="./styles.css?v=complete-pdf-v1">
 </head>
 <body>
 
@@ -43,11 +43,11 @@
       </section>
     </main>
     <dialog id="detail-dialog"><div class="dialog-shell"><button class="close" id="close-detail" aria-label="Sluiten">&times;</button><div id="detail-content"></div></div></dialog>
-    <dialog id="export-dialog" class="export-dialog"><div class="dialog-shell"><button class="close" id="close-export" aria-label="Sluiten">&times;</button><div class="export-head"><p class="eyebrow dark">BOEKEXPORT</p><h2>Welke letters wil je?</h2><p>De gekozen letters worden samengevoegd tot een boek met een nieuw voorblad. De losse lettervoorbladen worden weggelaten.</p></div><a class="integral-download" href="./pdf/woordenlijst-a-z-compact.pdf?v=integral-a-z-v1" download="woordenlijst-a-z-compact.pdf"><b>Download integrale A–Z-editie</b><small>Compacte tweekoloms PDF · 4.932 pagina’s · circa 28 MB</small></a><div class="export-tools"><button id="select-available" class="text-button">Selecteer alle letters</button><button id="clear-letters" class="text-button">Wis selectie</button></div><div class="letter-grid" id="letter-grid"></div><div class="export-summary" id="export-summary">Kies minimaal een letter.</div><button class="generate-pdf" id="generate-pdf" disabled>Download samengesteld boek</button></div></dialog>
+    <dialog id="export-dialog" class="export-dialog"><div class="dialog-shell"><button class="close" id="close-export" aria-label="Sluiten">&times;</button><div class="export-head"><p class="eyebrow dark">BOEKEXPORT</p><h2>Welke onderdelen wil je?</h2><p>De gekozen onderdelen worden samengevoegd tot een boek met een nieuw voorblad. Apostrofwoorden staan vooraan bij hun eigen letter.</p></div><a class="integral-download" href="./pdf/woordenlijst-a-z-compact.pdf?v=integral-complete-v2" download="woordenlijst-compleet-compact.pdf"><b>Download integrale editie</b><small>0–9 · A–Z · Overig · compacte tweekoloms PDF</small></a><div class="export-tools"><button id="select-available" class="text-button">Selecteer alles</button><button id="clear-letters" class="text-button">Wis selectie</button></div><div class="letter-grid" id="letter-grid"></div><div class="export-summary" id="export-summary">Kies minimaal één onderdeel.</div><button class="generate-pdf" id="generate-pdf" disabled>Download samengesteld boek</button></div></dialog>
   </div>
 
   <script src="./config.js"></script>
   <script src="./vendor/pdf-lib.min.js?v=1.17.1"></script>
-  <script src="./app.js?v=prefix-hierarchy-v3" defer></script>
+  <script src="./app.js?v=complete-pdf-v1" defer></script>
 </body>
 </html>

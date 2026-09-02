@@ -5,7 +5,7 @@ root_dir=${0:A:h:h}
 output_dir="$root_dir/docs/pdf"
 mkdir -p "$output_dir"
 
-workers=("abcdefghi" "jklmnopqr" "stuvwxyz")
+workers=("0-9,a,b,c,d,e,f,g,h,i" "j,k,l,m,n,o,p,q,r" "s,t,u,v,w,x,y,z,other")
 pids=()
 
 cleanup() {
@@ -28,17 +28,18 @@ for index in {1..3}; do
 done
 
 build_group() {
-  local letters=$1 port=$2
-  for letter in ${(s::)letters}; do
-    target="$output_dir/$letter.pdf"
+  local group=$1 port=$2
+  local sections=(${(s:,:)group})
+  for section in $sections; do
+    target="$output_dir/$section.pdf"
     if [[ -s "$target" && "${FORCE:-0}" != "1" ]]; then
-      echo "skip $letter"
+      echo "skip $section"
       continue
     fi
     temp="$target.part"
-    curl -fsS "http://127.0.0.1:$port/api/export.pdf?letters=$letter" -o "$temp"
+    curl -fsS "http://127.0.0.1:$port/api/export.pdf?sections=$section" -o "$temp"
     mv "$temp" "$target"
-    echo "pdf $letter $(stat -f %z "$target") bytes"
+    echo "pdf $section $(stat -f %z "$target") bytes"
   done
 }
 

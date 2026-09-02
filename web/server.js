@@ -8,6 +8,7 @@ const crypto = require('node:crypto');
 const { URL } = require('node:url');
 const { DatabaseSync } = require('node:sqlite');
 const PDFDocument = require('pdfkit');
+const { exportSection, apostropheRank, sortText, sectionOrder, sectionLabel, parseSections } = require('../publication/pdf_sections');
 
 const ROOT = path.resolve(__dirname, '..');
 const PUBLIC = path.join(__dirname, 'public');
@@ -25,16 +26,10 @@ const state = new DatabaseSync(STATE_DB, { readOnly: true });
 content.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=60000; PRAGMA cache_size=-65536;');
 state.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=60000; PRAGMA cache_size=-16384;');
 
-function initialLetter(value) {
-  const normalized = String(value || '')
-    .trimStart()
-    .normalize('NFD')
-    .replace(/\p{M}+/gu, '')
-    .toLocaleLowerCase('nl-NL');
-  return [...normalized].find(character => /^[a-z]$/.test(character)) || '';
-}
-
-content.function('initial_letter', { deterministic: true, directOnly: true }, initialLetter);
+content.function('export_section', { deterministic: true, directOnly: true }, exportSection);
+content.function('apostrophe_rank', { deterministic: true, directOnly: true }, apostropheRank);
+content.function('pdf_sort_text', { deterministic: true, directOnly: true }, sortText);
+content.function('section_order', { deterministic: true, directOnly: true }, sectionOrder);
 
 const metadataCache = new Map();
 const countCache = new Map();
@@ -228,10 +223,7 @@ function rawXml(id) {
   return content.prepare('SELECT raw_xml FROM responses WHERE id=?').get(id);
 }
 
-function cleanLetters(value) {
-  return [...new Set(String(value || '').toLowerCase().split(',')
-    .map(item => item.trim()).filter(item => /^[a-z]$/.test(item)))].sort();
-}
+function cleanSections(value) { return parseSections(value, []); }
 
 function pdfArticle(label) {
   if (!label || !label.includes('zelfstandig naamwoord')) return '';
@@ -242,24 +234,27 @@ function pdfSafe(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
-function generatePdf(res, letters) {
-  const placeholders = letters.map(() => '?').join(',');
-  const exportLetter = "initial_letter(COALESCE(NULLIF(l.lemma, ''), r.query_word))";
+function generatePdf(res, sections) {
+  const placeholders = sections.map(() => '?').join(',');
+  const displayValue = "COALESCE(NULLIF(l.lemma, ''), r.query_word)";
+  const exportSectionSql = `export_section(${displayValue})`;
   const rows = content.prepare(`
     WITH ranked AS (
       SELECT l.*, r.prefix_bucket, r.query_word,
-        ${exportLetter} AS export_letter,
+        ${exportSectionSql} AS export_section,
+        apostrophe_rank(${displayValue}) AS apostrophe_first,
+        pdf_sort_text(${displayValue}) AS export_sort,
         ROW_NUMBER() OVER (
           PARTITION BY CASE WHEN l.lemma_id<>'' THEN 'id:'||l.lemma_id
                             ELSE 'text:'||lower(l.lemma)||'|'||l.label END
           ORDER BY r.id, l.id
         ) AS rn
       FROM lemmata l JOIN responses r ON r.id=l.response_id
-      WHERE ${exportLetter} IN (${placeholders})
+      WHERE ${exportSectionSql} IN (${placeholders})
     )
     SELECT * FROM ranked WHERE rn=1
-    ORDER BY export_letter, lemma COLLATE NOCASE, lemma, id
-  `).iterate(...letters);
+    ORDER BY section_order(export_section), apostrophe_first, export_sort COLLATE NOCASE, lemma, id
+  `).iterate(...sections);
   const forms = content.prepare(`
     SELECT label, wordform, hyphenation, part_of_speech, position
     FROM paradigms WHERE lemma_row_id=?
@@ -267,19 +262,19 @@ function generatePdf(res, letters) {
   `);
   const counts = Object.fromEntries(content.prepare(`
     WITH ranked AS (
-      SELECT ${exportLetter} AS export_letter,
+      SELECT ${exportSectionSql} AS export_section,
         ROW_NUMBER() OVER (
           PARTITION BY CASE WHEN l.lemma_id<>'' THEN 'id:'||l.lemma_id
                             ELSE 'text:'||lower(l.lemma)||'|'||l.label END
           ORDER BY r.id, l.id
         ) AS rn
       FROM lemmata l JOIN responses r ON r.id=l.response_id
-      WHERE ${exportLetter} IN (${placeholders})
+      WHERE ${exportSectionSql} IN (${placeholders})
     )
-    SELECT export_letter, COUNT(*) AS lemmata
-    FROM ranked WHERE rn=1 GROUP BY export_letter
-  `).all(...letters).map(row => [row.export_letter, row.lemmata]));
-  const filename = `woordenlijst-${letters.join('-')}.pdf`;
+    SELECT export_section, COUNT(*) AS lemmata
+    FROM ranked WHERE rn=1 GROUP BY export_section
+  `).all(...sections).map(row => [row.export_section, row.lemmata]));
+  const filename = `woordenlijst-${sections.join('-')}.pdf`;
   res.writeHead(200, commonHeaders({
     'Content-Type': 'application/pdf',
     'Content-Disposition': `attachment; filename="${filename}"`,
@@ -289,7 +284,7 @@ function generatePdf(res, letters) {
   const doc = new PDFDocument({
     size: 'A4', margins: { top: 56, right: 52, bottom: 52, left: 52 },
     info: {
-      Title: `Woordenlijst ${letters.map(letter => letter.toUpperCase()).join(', ')}`,
+      Title: `Woordenlijst ${sections.map(sectionLabel).join(', ')}`,
       Author: 'Woordenlijst Browser',
       Subject: 'Lokale export van woordenlijst.org XML-archief',
     },
@@ -300,11 +295,11 @@ function generatePdf(res, letters) {
   doc.pipe(res);
 
   let pageNumber = 1;
-  let currentLetter = '';
+  let currentSection = '';
   function footer() {
     const oldX = doc.x, oldY = doc.y;
     doc.font('Regular').fontSize(7).fillColor('#738078').text(
-      `Woordenlijst Browser · ${currentLetter ? `Letter ${currentLetter.toUpperCase()} · ` : ''}${pageNumber}`,
+      `Woordenlijst Browser · ${currentSection ? `${sectionLabel(currentSection)} · ` : ''}${pageNumber}`,
       52, doc.page.height - doc.page.margins.bottom - 10,
       { width: doc.page.width - 104, align: 'center', lineBreak: false }
     );
@@ -318,7 +313,7 @@ function generatePdf(res, letters) {
   doc.fillColor('#ffffff').font('Regular').fontSize(40).text('Woordenlijst', 52, 130);
   doc.font('Italic').fillColor('#cce36f').fontSize(33).text('boekexport', 52, 178);
   doc.font('Regular').fillColor('#dbe9e3').fontSize(14)
-    .text(`Letters ${letters.map(letter => letter.toUpperCase()).join(', ')}`, 52, 250);
+    .text(`Onderdelen ${sections.map(sectionLabel).join(', ')}`, 52, 250);
   const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
   doc.fontSize(10).fillColor('#b9cec5')
     .text(`${total.toLocaleString('nl-NL')} unieke lemma’s in de huidige lokale momentopname`, 52, 285, { width: 430 });
@@ -329,12 +324,12 @@ function generatePdf(res, letters) {
 
   let exported = 0;
   for (const lemma of rows) {
-    if (lemma.export_letter !== currentLetter) {
-      currentLetter = lemma.export_letter;
+    if (lemma.export_section !== currentSection) {
+      currentSection = lemma.export_section;
       doc.addPage();
-      doc.fillColor('#1f6b4f').font('Bold').fontSize(44).text(currentLetter.toUpperCase(), 52, 58);
+      doc.fillColor('#1f6b4f').font('Bold').fontSize(44).text(sectionLabel(currentSection), 52, 58);
       doc.fillColor('#66736c').font('Regular').fontSize(9)
-        .text(`${(counts[currentLetter] || 0).toLocaleString('nl-NL')} unieke lemma’s`, 54, 112);
+        .text(`${(counts[currentSection] || 0).toLocaleString('nl-NL')} unieke lemma’s`, 54, 112);
       doc.moveTo(52, 135).lineTo(doc.page.width - 52, 135).strokeColor('#cdd5cf').stroke();
       doc.y = 158;
     }
@@ -418,9 +413,9 @@ const server = http.createServer((req, res) => {
     if (url.pathname === '/api/letters') return json(res, getLetters(), 200, 'public, max-age=300');
     if (url.pathname === '/api/words') return json(res, getWords(url));
     if (url.pathname === '/api/export.pdf') {
-      const letters = cleanLetters(url.searchParams.get('letters'));
-      if (!letters.length) return json(res, { error: 'Kies minimaal één letter' }, 400);
-      return generatePdf(res, letters);
+      const sections = cleanSections(url.searchParams.get('sections') || url.searchParams.get('letters'));
+      if (!sections.length) return json(res, { error: 'Kies minimaal één onderdeel' }, 400);
+      return generatePdf(res, sections);
     }
     const match = url.pathname.match(/^\/api\/words\/(\d+)(?:\/(xml|nodes))?$/);
     if (match) {

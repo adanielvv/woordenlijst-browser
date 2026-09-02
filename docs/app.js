@@ -2,9 +2,14 @@
 
 const GATE_CODE = '8086';
 const GATE_KEY = 'woordenlijst_gate_ok';
-const PDF_BUILD = 'combined-cover-v3';
-const INTEGRAL_PDF_BUILD = 'integral-a-z-v1';
+const PDF_BUILD = 'complete-sections-v1';
+const INTEGRAL_PDF_BUILD = 'integral-complete-v2';
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
+const PDF_SECTIONS = Object.freeze([
+  { value: '0-9', label: '0–9' },
+  ...ALPHABET.split('').map(letter => ({ value: letter, label: letter.toUpperCase() })),
+  { value: 'other', label: 'Overig' },
+]);
 const config = window.WOORDENLIJST_CONFIG || {};
 const state = { q: '', prefix: '', prefixGroup: '', page: 1, limit: 40, pages: 1 };
 const $ = selector => document.querySelector(selector);
@@ -172,17 +177,21 @@ async function openWord(id, prefix) {
 }
 
 function buildLetterGrid() {
-  $('#letter-grid').innerHTML = 'abcdefghijklmnopqrstuvwxyz'.split('').map(letter => `<label class="letter-choice"><input type="checkbox" value="${letter}" ${metadata.stats.letters[letter] ? '' : 'disabled'}><span>${letter.toUpperCase()}</span><small>${metadata.stats.letters[letter] ? fmt(metadata.stats.letters[letter]) : '-'}</small></label>`).join('');
+  $('#letter-grid').innerHTML = PDF_SECTIONS.map(section => {
+    const total = /^[a-z]$/.test(section.value) ? metadata.stats.letters[section.value] : metadata.stats.pdf_sections?.[section.value];
+    return `<label class="letter-choice ${section.value.length > 1 ? 'section-choice' : ''}"><input type="checkbox" value="${section.value}" ${total ? '' : 'disabled'}><span>${esc(section.label)}</span><small>${total ? fmt(total) : '-'}</small></label>`;
+  }).join('');
   document.querySelectorAll('#letter-grid input').forEach(input => input.addEventListener('change', updateExport));
 }
-function selectedLetters() { return [...document.querySelectorAll('#letter-grid input:checked')].map(input => input.value); }
-function updateExport() { const letters = selectedLetters(); $('#export-summary').textContent = letters.length ? letters.map(letter => letter.toUpperCase()).join(', ') : 'Kies minimaal een letter.'; $('#generate-pdf').disabled = !letters.length; }
+function selectedSections() { return [...document.querySelectorAll('#letter-grid input:checked')].map(input => input.value); }
+function pdfSectionLabel(value) { return PDF_SECTIONS.find(section => section.value === value)?.label || value.toUpperCase(); }
+function updateExport() { const sections = selectedSections(); $('#export-summary').textContent = sections.length ? sections.map(pdfSectionLabel).join(', ') : 'Kies minimaal één onderdeel.'; $('#generate-pdf').disabled = !sections.length; }
 
 function centeredText(page, text, y, font, size, color) {
   page.drawText(text, { x: (page.getWidth() - font.widthOfTextAtSize(text, size)) / 2, y, font, size, color });
 }
 
-async function buildCombinedPdf(letters) {
+async function buildCombinedPdf(sections) {
   if (!globalThis.PDFLib) throw new Error('De PDF-module kon niet worden geladen. Ververs de pagina en probeer opnieuw.');
   const { PDFDocument, StandardFonts, rgb } = globalThis.PDFLib;
   const combined = await PDFDocument.create();
@@ -194,29 +203,29 @@ async function buildCombinedPdf(letters) {
   const dark = rgb(0.09, 0.137, 0.118);
   const muted = rgb(0.41, 0.45, 0.43);
   const paper = rgb(0.965, 0.953, 0.91);
-  const letterLabel = letters.map(letter => letter.toUpperCase()).join(' + ');
+  const sectionLabel = sections.map(pdfSectionLabel).join(' + ');
 
   page.drawRectangle({ x: 0, y: 0, width: page.getWidth(), height: page.getHeight(), color: paper });
   page.drawRectangle({ x: 0, y: 665, width: page.getWidth(), height: 177, color: green });
   centeredText(page, 'WOORDENLIJST NEDERLANDSE TAAL', 775, bold, 12, rgb(1, 1, 1));
   centeredText(page, 'Samengestelde boekexport', 715, regular, 15, rgb(0.88, 0.93, 0.90));
-  centeredText(page, letterLabel, 487, bold, letters.length > 12 ? 25 : 34, dark);
-  centeredText(page, letters.length === 1 ? '1 letter' : `${letters.length} letters`, 449, italic, 12, muted);
+  centeredText(page, sectionLabel, 487, bold, sections.length > 12 ? 20 : 34, dark);
+  centeredText(page, sections.length === 1 ? '1 onderdeel' : `${sections.length} onderdelen`, 449, italic, 12, muted);
   page.drawLine({ start: { x: 92, y: 410 }, end: { x: 503, y: 410 }, thickness: 1, color: rgb(0.78, 0.81, 0.78) });
-  centeredText(page, 'Alle lemma-pagina\'s staan per letter achter elkaar.', 370, regular, 11, muted);
+  centeredText(page, 'Alle lemma-pagina\'s staan per onderdeel achter elkaar.', 370, regular, 11, muted);
   centeredText(page, 'De afzonderlijke lettervoorbladen zijn weggelaten.', 351, regular, 11, muted);
   centeredText(page, 'Woordenlijst Browser', 79, bold, 10, green);
   centeredText(page, new Date().toLocaleDateString('nl-NL'), 60, regular, 9, muted);
 
-  combined.setTitle(`Woordenlijst - ${letterLabel}`);
-  combined.setSubject(`Samengestelde woordenlijst voor ${letterLabel}`);
+  combined.setTitle(`Woordenlijst - ${sectionLabel}`);
+  combined.setSubject(`Samengestelde woordenlijst voor ${sectionLabel}`);
   combined.setCreator('Woordenlijst Browser');
 
-  for (let index = 0; index < letters.length; index += 1) {
-    const letter = letters[index];
-    $('#export-summary').textContent = `Letter ${letter.toUpperCase()} laden (${index + 1}/${letters.length})...`;
-    const response = await fetch(new URL(`./pdf/${letter}.pdf?v=${PDF_BUILD}`, document.baseURI));
-    if (!response.ok) throw new Error(`PDF voor letter ${letter.toUpperCase()} kon niet worden geladen (${response.status}).`);
+  for (let index = 0; index < sections.length; index += 1) {
+    const section = sections[index];
+    $('#export-summary').textContent = `${pdfSectionLabel(section)} laden (${index + 1}/${sections.length})...`;
+    const response = await fetch(new URL(`./pdf/${section}.pdf?v=${PDF_BUILD}`, document.baseURI));
+    if (!response.ok) throw new Error(`PDF voor ${pdfSectionLabel(section)} kon niet worden geladen (${response.status}).`);
     const source = await PDFDocument.load(await response.arrayBuffer(), { ignoreEncryption: true });
     const contentPages = Array.from({ length: Math.max(0, source.getPageCount() - 1) }, (_, pageIndex) => pageIndex + 1);
     const copiedPages = await combined.copyPages(source, contentPages);
@@ -228,12 +237,12 @@ async function buildCombinedPdf(letters) {
 }
 
 async function downloadCombinedPdf() {
-  const letters = selectedLetters();
-  if (!letters.length) return;
-  if (letters.join('') === ALPHABET) {
+  const sections = selectedSections();
+  if (!sections.length) return;
+  if (sections.join(',') === PDF_SECTIONS.map(section => section.value).join(',')) {
     const link = document.createElement('a');
     link.href = new URL(`./pdf/woordenlijst-a-z-compact.pdf?v=${INTEGRAL_PDF_BUILD}`, document.baseURI);
-    link.download = 'woordenlijst-a-z-compact.pdf';
+    link.download = 'woordenlijst-compleet-compact.pdf';
     document.body.append(link);
     link.click();
     link.remove();
@@ -245,11 +254,11 @@ async function downloadCombinedPdf() {
   button.disabled = true;
   button.textContent = 'PDF samenstellen...';
   try {
-    const bytes = await buildCombinedPdf(letters);
+    const bytes = await buildCombinedPdf(sections);
     const blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
     const link = document.createElement('a');
     link.href = blobUrl;
-    link.download = `woordenlijst-${letters.join('-')}.pdf`;
+    link.download = `woordenlijst-${sections.join('-')}.pdf`;
     document.body.append(link);
     link.click();
     link.remove();
@@ -259,7 +268,7 @@ async function downloadCombinedPdf() {
     $('#export-summary').textContent = `Export mislukt: ${error.message}`;
   } finally {
     button.textContent = originalLabel;
-    button.disabled = !selectedLetters().length;
+    button.disabled = !selectedSections().length;
   }
 }
 

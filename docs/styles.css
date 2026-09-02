@@ -47,6 +47,7 @@ dialog { width:min(920px,94vw); max-height:92vh; border:0; padding:0; border-rad
 .letter-choice { position:relative; }
 .letter-choice input { position:absolute; opacity:0; }
 .letter-choice span { min-height:58px; display:grid; place-items:center; border:1px solid #d5dbd5; background:#f8f8f4; border-radius:9px; cursor:pointer; font:700 17px var(--serif); color:#53615a; }
+.letter-choice.section-choice span { font:800 12px var(--sans); }
 .letter-choice small { display:block; font:8px var(--sans); color:#87918b; margin-top:-15px; text-align:center; pointer-events:none; }
 .letter-choice input:checked+span { background:var(--green); border-color:var(--green); color:white; }
 .letter-choice input:disabled+span { opacity:.35; cursor:not-allowed; }

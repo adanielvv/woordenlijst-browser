@@ -15,13 +15,13 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 NODE_OPTIONS=--max-old-space-size=2048 node "$generator" \
-  --letters=abcdefghijklmnopqrstuvwxyz --cover-only=1 --output="$parts_dir/cover.pdf"
+  --sections=0-9,abcdefghijklmnopqrstuvwxyz,other --cover-only=1 --output="$parts_dir/cover.pdf"
 
 build_group() {
   local group=$1
   for letter in ${(s::)group}; do
     NODE_OPTIONS=--max-old-space-size=2048 node "$generator" \
-      --letters="$letter" --cover=0 --output="$parts_dir/$letter.pdf" \
+      --sections="$letter" --cover=0 --output="$parts_dir/$letter.pdf" \
       >"$parts_dir/$letter.log" 2>&1
     echo "compact $letter $(stat -f %z "$parts_dir/$letter.pdf") bytes"
   done
@@ -31,11 +31,18 @@ for group in $workers; do
   build_group "$group" &
   worker_pids+=("$!")
 done
+NODE_OPTIONS=--max-old-space-size=2048 node "$generator" \
+  --sections=0-9 --cover=0 --output="$parts_dir/0-9.pdf" >"$parts_dir/0-9.log" 2>&1 &
+worker_pids+=("$!")
+NODE_OPTIONS=--max-old-space-size=2048 node "$generator" \
+  --sections=other --cover=0 --output="$parts_dir/other.pdf" >"$parts_dir/other.log" 2>&1 &
+worker_pids+=("$!")
 for pid in $worker_pids; do wait "$pid"; done
 worker_pids=()
 
-inputs=("$parts_dir/cover.pdf")
+inputs=("$parts_dir/cover.pdf" "$parts_dir/0-9.pdf")
 for letter in {a..z}; do inputs+=("$parts_dir/$letter.pdf"); done
+inputs+=("$parts_dir/other.pdf")
 pdfunite $inputs "$parts_dir/merged.pdf"
 qpdf --warning-exit-0 --linearize --object-streams=generate \
   --compress-streams=y --recompress-flate --compression-level=9 \

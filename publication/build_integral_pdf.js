@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createRequire } = require('node:module');
 const { DatabaseSync } = require('node:sqlite');
+const { SECTION_ORDER, exportSection, apostropheRank, sortText, sectionOrder, sectionLabel, parseSections } = require('./pdf_sections');
 
 const ROOT = path.resolve(__dirname, '..');
 const webRequire = createRequire(path.join(ROOT, 'web', 'server.js'));
@@ -30,17 +31,10 @@ function argument(name, fallback = '') {
 }
 
 const output = path.resolve(argument('output', DEFAULT_OUTPUT));
-const letters = [...new Set(argument('letters', 'abcdefghijklmnopqrstuvwxyz')
-  .toLowerCase().split('').filter(letter => /^[a-z]$/.test(letter)))];
+const sections = parseSections(argument('sections', argument('letters', '')), SECTION_ORDER);
 const includeCover = argument('cover', '1') !== '0';
 const coverOnly = argument('cover-only', '0') === '1';
-if (!letters.length) throw new Error('Geen geldige letters opgegeven.');
-
-function initialLetter(value) {
-  const normalized = String(value || '')
-    .trimStart().normalize('NFD').replace(/\p{M}+/gu, '').toLocaleLowerCase('nl-NL');
-  return [...normalized].find(character => /^[a-z]$/.test(character)) || '';
-}
+if (!sections.length) throw new Error('Geen geldige PDF-onderdelen opgegeven.');
 
 function safe(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -63,23 +57,28 @@ try { fs.unlinkSync(temporary); } catch {}
 
 const database = new DatabaseSync(DB_PATH, { readOnly: true });
 database.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=60000; PRAGMA cache_size=-131072;');
-database.function('initial_letter', { deterministic: true, directOnly: true }, initialLetter);
+database.function('export_section', { deterministic: true, directOnly: true }, exportSection);
+database.function('apostrophe_rank', { deterministic: true, directOnly: true }, apostropheRank);
+database.function('pdf_sort_text', { deterministic: true, directOnly: true }, sortText);
+database.function('section_order', { deterministic: true, directOnly: true }, sectionOrder);
 
-const placeholders = letters.map(() => '?').join(',');
+const placeholders = sections.map(() => '?').join(',');
 const lemmaRows = database.prepare(`
   WITH ranked AS (
     SELECT l.*, r.query_word,
-      initial_letter(COALESCE(NULLIF(l.lemma, ''), r.query_word)) AS export_letter,
+      export_section(COALESCE(NULLIF(l.lemma, ''), r.query_word)) AS export_section,
+      apostrophe_rank(COALESCE(NULLIF(l.lemma, ''), r.query_word)) AS apostrophe_first,
+      pdf_sort_text(COALESCE(NULLIF(l.lemma, ''), r.query_word)) AS export_sort,
       ROW_NUMBER() OVER (
         PARTITION BY CASE WHEN l.lemma_id<>'' THEN 'id:'||l.lemma_id
                           ELSE 'text:'||lower(l.lemma)||'|'||l.label END
         ORDER BY r.id, l.id
       ) AS rn
     FROM lemmata l JOIN responses r ON r.id=l.response_id
-    WHERE initial_letter(COALESCE(NULLIF(l.lemma, ''), r.query_word)) IN (${placeholders})
+    WHERE export_section(COALESCE(NULLIF(l.lemma, ''), r.query_word)) IN (${placeholders})
   )
   SELECT * FROM ranked WHERE rn=1
-  ORDER BY export_letter, lemma COLLATE NOCASE, lemma, id
+  ORDER BY section_order(export_section), apostrophe_first, export_sort COLLATE NOCASE, lemma, id
 `);
 const formRows = database.prepare(`
   SELECT label, wordform, hyphenation, part_of_speech, position
@@ -94,7 +93,7 @@ const doc = new PDFDocument({
   compress: true,
   bufferPages: false,
   info: {
-    Title: `Woordenlijst ${letters.map(letter => letter.toUpperCase()).join('–')} — compacte integrale editie`,
+    Title: `Woordenlijst ${sections.map(sectionLabel).join(' · ')} — compacte integrale editie`,
     Author: 'Woordenlijst Browser',
     Subject: 'Compacte tweekoloms boekexport van het woordenlijst.org-archief',
     Creator: 'Woordenlijst Browser',
@@ -107,7 +106,7 @@ const stream = fs.createWriteStream(temporary, { flags: 'wx' });
 doc.pipe(stream);
 
 let pageNumber = 0;
-let currentLetter = '';
+let currentSection = '';
 let column = 0;
 let cursorY = CONTENT_TOP;
 let exported = 0;
@@ -118,27 +117,27 @@ function columnX() {
   return MARGIN_X + column * (COLUMN_WIDTH + COLUMN_GAP);
 }
 
-function drawRunningMatter(letter) {
-  const label = `WOORDENLIJST · ${letter.toUpperCase()}`;
+function drawRunningMatter(section) {
+  const label = `WOORDENLIJST · ${sectionLabel(section)}`;
   doc.font('Bold').fontSize(5.8).fillColor('#557067')
     .text(label, MARGIN_X, 18, { width: PAGE.width - 2 * MARGIN_X, characterSpacing: 0.7, lineBreak: false });
   doc.font('Regular').fontSize(5.8).fillColor('#6f7c76')
-    .text(`${letter.toUpperCase()} · ${pageNumber}`, MARGIN_X, 823, { width: PAGE.width - 2 * MARGIN_X, align: 'center', lineBreak: false });
+    .text(`${sectionLabel(section)} · ${pageNumber}`, MARGIN_X, 823, { width: PAGE.width - 2 * MARGIN_X, align: 'center', lineBreak: false });
 }
 
-function addContentPage(letter, letterStart = false) {
+function addContentPage(section, sectionStart = false) {
   doc.addPage({ size: 'A4', margins: { top: 0, right: 0, bottom: 0, left: 0 } });
   pageNumber += 1;
   contentPages += 1;
   column = 0;
-  cursorY = letterStart ? LETTER_TOP : CONTENT_TOP;
-  drawRunningMatter(letter);
-  if (letterStart) {
+  cursorY = sectionStart ? LETTER_TOP : CONTENT_TOP;
+  drawRunningMatter(section);
+  if (sectionStart) {
     doc.font('Bold').fontSize(25).fillColor('#164c39')
-      .text(letter.toUpperCase(), MARGIN_X, 37, { width: PAGE.width - 2 * MARGIN_X, lineBreak: false });
+      .text(sectionLabel(section), MARGIN_X, 37, { width: PAGE.width - 2 * MARGIN_X, lineBreak: false });
     doc.moveTo(MARGIN_X + 35, 54).lineTo(PAGE.width - MARGIN_X, 54)
       .lineWidth(0.7).strokeColor('#a9b8b0').stroke();
-    const outline = doc.outline.addItem(`Letter ${letter.toUpperCase()}`);
+    const outline = doc.outline.addItem(sectionLabel(section));
     outline.expanded = false;
   }
 }
@@ -148,7 +147,7 @@ function nextColumn() {
     column = 1;
     cursorY = CONTENT_TOP;
   } else {
-    addContentPage(currentLetter, false);
+    addContentPage(currentSection, false);
   }
 }
 
@@ -189,7 +188,7 @@ function drawCover() {
   doc.fillColor('#ffffff').font('Regular').fontSize(34).text('Woordenlijst', 48, 132, { lineBreak: false });
   doc.fillColor('#cce36f').font('Italic').fontSize(28).text('integrale editie', 48, 176, { lineBreak: false });
   doc.fillColor('#e1ece7').font('Regular').fontSize(12)
-    .text(`Letters ${letters[0].toUpperCase()}–${letters.at(-1).toUpperCase()} · compacte tweekoloms opmaak`, 48, 245);
+    .text(`${sections.length === SECTION_ORDER.length ? '0–9 · A–Z · Overig' : sections.map(sectionLabel).join(' · ')} · compacte tweekoloms opmaak`, 48, 245);
   doc.moveTo(48, 288).lineTo(350, 288).lineWidth(1).strokeColor('#7aa08f').stroke();
   doc.fillColor('#bdd0c7').font('Regular').fontSize(9)
     .text('Lemma’s, uitspraak, woordsoort, betekenis, woordvormen en afbreking.', 48, 315, { width: 410 });
@@ -246,23 +245,23 @@ function drawLemma(lemma, forms) {
 
 if (includeCover || coverOnly) drawCover();
 if (!coverOnly) {
-  let letterCount = 0;
-  for (const lemma of lemmaRows.iterate(...letters)) {
-    if (lemma.export_letter !== currentLetter) {
-      if (currentLetter) process.stdout.write(`\n${currentLetter.toUpperCase()}: ${letterCount.toLocaleString('nl-NL')} lemma's\n`);
-      currentLetter = lemma.export_letter;
-      letterCount = 0;
-      addContentPage(currentLetter, true);
+  let sectionCount = 0;
+  for (const lemma of lemmaRows.iterate(...sections)) {
+    if (lemma.export_section !== currentSection) {
+      if (currentSection) process.stdout.write(`\n${sectionLabel(currentSection)}: ${sectionCount.toLocaleString('nl-NL')} lemma's\n`);
+      currentSection = lemma.export_section;
+      sectionCount = 0;
+      addContentPage(currentSection, true);
     }
     drawLemma(lemma, formRows.all(lemma.id));
-    letterCount += 1;
+    sectionCount += 1;
     exported += 1;
     if (exported % 1000 === 0) {
       const seconds = Math.max(1, Math.round((Date.now() - started) / 1000));
       process.stdout.write(`\r${exported.toLocaleString('nl-NL')} lemma's · ${contentPages.toLocaleString('nl-NL')} pagina's · ${seconds}s`);
     }
   }
-  if (currentLetter) process.stdout.write(`\n${currentLetter.toUpperCase()}: ${letterCount.toLocaleString('nl-NL')} lemma's\n`);
+  if (currentSection) process.stdout.write(`\n${sectionLabel(currentSection)}: ${sectionCount.toLocaleString('nl-NL')} lemma's\n`);
 }
 
 doc.end();
